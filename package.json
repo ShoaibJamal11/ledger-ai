@@ -9,9 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "ai": "^7.0.131",
+    "groq-sdk": "^1.6.0",
+    "lucide-react": "^1.52.0",
     "next": "16.4.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "react-dropzone": "^20.1.2"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

@@ -26,45 +26,33 @@ import {
 
 interface LineItem {
   description: string;
-  amount: string;
+  amount: string | number;
 }
 
 interface ExtractionResult {
   vendorName: string | null;
   date: string | null;
-  tax: string | null;
-  totalAmount: string | null;
+  tax: string | number | null;
+  totalAmount: string | number | null;
   lineItems: LineItem[];
 }
 
 type OutputState = "idle" | "loading" | "done" | "error";
 
 // ---------------------------------------------------------------------------
-// Loading messages
+// Helpers
 // ---------------------------------------------------------------------------
 
-const LOADING_STEPS = [
-  "Uploading document to Groq LPU™…",
-  "Running vision model inference…",
-  "Extracting financial entities…",
-  "Parsing line items…",
-  "Structuring JSON output…",
-];
-
-function useLoadingMessage(active: boolean) {
-  const [idx, setIdx] = useState(0);
-  useEffect(() => {
-    if (!active) {
-      const t = setTimeout(() => setIdx(0), 0);
-      return () => clearTimeout(t);
-    }
-    const id = setInterval(
-      () => setIdx((i) => (i + 1) % LOADING_STEPS.length),
-      1800
-    );
-    return () => clearInterval(id);
-  }, [active]);
-  return LOADING_STEPS[idx];
+function formatCurrency(val: string | number | null | undefined): string | null {
+  if (val === null || val === undefined || val === "") return null;
+  if (typeof val === "number") {
+    return `$${val.toFixed(2)}`;
+  }
+  const str = String(val).trim();
+  if (!str.startsWith("$") && !isNaN(Number(str))) {
+    return `$${Number(str).toFixed(2)}`;
+  }
+  return str;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,21 +66,16 @@ function ErrorToast({
   message: string;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const t = setTimeout(onClose, 6000);
-    return () => clearTimeout(t);
-  }, [onClose]);
-
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-2xl border border-red-500/30 bg-[#1a1033] px-4 py-3 shadow-2xl shadow-red-900/30 backdrop-blur-md">
-      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+    <div className="fixed bottom-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-2xl border border-red-200 bg-white px-4 py-3 shadow-xl shadow-red-100/60">
+      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-red-300">Extraction failed</p>
-        <p className="mt-0.5 text-xs text-red-400/80 break-all">{message}</p>
+        <p className="text-sm font-semibold text-red-700">Extraction failed</p>
+        <p className="mt-0.5 text-xs text-red-500 leading-relaxed break-words">{message}</p>
       </div>
       <button
         onClick={onClose}
-        className="ml-auto shrink-0 text-slate-500 hover:text-slate-300 transition"
+        className="ml-auto shrink-0 text-slate-400 hover:text-slate-600 transition"
       >
         <X className="h-4 w-4" />
       </button>
@@ -101,7 +84,7 @@ function ErrorToast({
 }
 
 // ---------------------------------------------------------------------------
-// Metric card
+// Metric card (light)
 // ---------------------------------------------------------------------------
 
 function MetricCard({
@@ -118,27 +101,27 @@ function MetricCard({
   return (
     <div
       className={[
-        "flex flex-col gap-2 rounded-2xl border p-4 transition",
+        "flex flex-col gap-2 rounded-2xl border p-4 transition-all",
         accent
-          ? "border-violet-500/40 bg-gradient-to-br from-violet-600/20 to-indigo-600/10"
-          : "border-white/10 bg-white/5",
+          ? "border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 shadow-sm shadow-violet-100"
+          : "border-slate-200/80 bg-white shadow-sm",
       ].join(" ")}
     >
       <div className="flex items-center gap-2">
         <Icon
-          className={`h-4 w-4 ${accent ? "text-violet-400" : "text-slate-400"}`}
+          className={`h-4 w-4 ${accent ? "text-violet-600" : "text-slate-400"}`}
         />
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
           {label}
         </span>
       </div>
       <p
         className={`text-xl font-bold leading-none tracking-tight ${
-          accent ? "text-violet-300" : "text-slate-100"
+          accent ? "text-violet-700" : "text-slate-800"
         }`}
       >
         {value ?? (
-          <span className="text-slate-600 text-base font-normal">—</span>
+          <span className="text-slate-300 text-base font-normal">—</span>
         )}
       </p>
     </div>
@@ -159,11 +142,11 @@ function CopyButton({ data }: { data: object }) {
   return (
     <button
       onClick={handleCopy}
-      className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-violet-500/40 hover:bg-violet-500/10 hover:text-violet-300"
+      className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-300 hover:text-violet-700 active:scale-95"
     >
       {copied ? (
         <>
-          <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied!
+          <Check className="h-3.5 w-3.5 text-emerald-500" /> Copied!
         </>
       ) : (
         <>
@@ -175,11 +158,39 @@ function CopyButton({ data }: { data: object }) {
 }
 
 // ---------------------------------------------------------------------------
+// Loading messages
+// ---------------------------------------------------------------------------
+
+const LOADING_STEPS = [
+  "Uploading document to Groq Vision LPU™…",
+  "Analyzing receipt layout & typography…",
+  "Extracting financial entities & amounts…",
+  "Resolving subtotal & verifying line items…",
+  "Formatting structured JSON output…",
+];
+
+function useLoadingMessage(active: boolean) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      const t = setTimeout(() => setIdx(0), 0);
+      return () => clearTimeout(t);
+    }
+    const id = setInterval(
+      () => setIdx((i) => (i + 1) % LOADING_STEPS.length),
+      1600
+    );
+    return () => clearInterval(id);
+  }, [active]);
+  return LOADING_STEPS[idx];
+}
+
+// ---------------------------------------------------------------------------
 // Upload column
 // ---------------------------------------------------------------------------
 
 interface UploadColumnProps {
-  onExtract: (base64: string) => void;
+  onExtract: (base64Image: string) => void;
   isLoading: boolean;
 }
 
@@ -194,8 +205,11 @@ function UploadColumn({ onExtract, isLoading }: UploadColumnProps) {
     reader.onload = (e) => {
       const result = e.target?.result as string;
       base64Ref.current = result;
-      if (f.type.startsWith("image/")) setPreview(result);
-      else setPreview(null);
+      if (f.type.startsWith("image/")) {
+        setPreview(result);
+      } else {
+        setPreview(null);
+      }
     };
     reader.readAsDataURL(f);
   };
@@ -223,7 +237,9 @@ function UploadColumn({ onExtract, isLoading }: UploadColumnProps) {
   });
 
   const handleExtract = () => {
-    if (base64Ref.current) onExtract(base64Ref.current);
+    if (base64Ref.current) {
+      onExtract(base64Ref.current);
+    }
   };
 
   const loadingMsg = useLoadingMessage(isLoading);
@@ -232,9 +248,9 @@ function UploadColumn({ onExtract, isLoading }: UploadColumnProps) {
     <div className="flex flex-col gap-5">
       {/* Header */}
       <div>
-        <h2 className="text-lg font-bold text-white">Upload Invoice</h2>
-        <p className="mt-1 text-sm text-slate-400">
-          Drag &amp; drop or click to select a JPG, PNG, or PDF.
+        <h2 className="text-lg font-bold text-slate-800">Upload Invoice or Receipt</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Drag &amp; drop or click to select a JPG, PNG, or PDF file.
         </p>
       </div>
 
@@ -245,11 +261,11 @@ function UploadColumn({ onExtract, isLoading }: UploadColumnProps) {
           "relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed transition-all duration-200",
           file ? "min-h-56 cursor-default p-2" : "cursor-pointer px-6 py-14",
           isDragActive
-            ? "border-violet-400 bg-violet-500/10 scale-[1.01]"
+            ? "border-violet-400 bg-violet-50 scale-[1.01]"
             : file
-            ? "border-white/10 bg-white/5"
-            : "border-white/15 bg-white/5 hover:border-violet-400/50 hover:bg-violet-500/5",
-          isLoading ? "pointer-events-none opacity-50" : "",
+            ? "border-slate-200 bg-slate-50"
+            : "border-slate-200 bg-slate-50 hover:border-violet-400 hover:bg-violet-50/50",
+          isLoading ? "pointer-events-none opacity-60" : "",
         ].join(" ")}
       >
         <input {...getInputProps()} />
@@ -263,20 +279,23 @@ function UploadColumn({ onExtract, isLoading }: UploadColumnProps) {
                 width={600}
                 height={400}
                 unoptimized
-                className="mx-auto max-h-64 w-auto rounded-xl object-contain shadow-lg shadow-black/30"
+                className="mx-auto max-h-64 w-auto rounded-xl object-contain shadow-md shadow-slate-200"
               />
             ) : (
-              <div className="flex flex-col items-center gap-2 py-8 text-slate-400">
-                <FileText className="h-12 w-12 opacity-50" strokeWidth={1} />
-                <p className="text-sm font-medium text-slate-300">{file.name}</p>
-                <p className="text-xs text-slate-500">
+              <div className="flex flex-col items-center gap-2 py-8">
+                <FileText
+                  className="h-12 w-12 text-slate-300"
+                  strokeWidth={1}
+                />
+                <p className="text-sm font-medium text-slate-700">{file.name}</p>
+                <p className="text-xs text-slate-400">
                   {(file.size / 1024).toFixed(1)} KB · PDF
                 </p>
               </div>
             )}
             <button
               onClick={clear}
-              className="absolute right-2 top-2 flex items-center gap-1 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 text-xs font-medium text-slate-300 backdrop-blur-sm transition hover:border-red-500/50 hover:text-red-400"
+              className="absolute right-2 top-2 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-500 shadow-sm transition hover:border-red-300 hover:text-red-500"
             >
               <X className="h-3 w-3" />
               Remove
@@ -286,29 +305,29 @@ function UploadColumn({ onExtract, isLoading }: UploadColumnProps) {
           <>
             <div
               className={`rounded-2xl p-4 ${
-                isDragActive ? "bg-violet-500/20" : "bg-white/5"
+                isDragActive ? "bg-violet-100" : "bg-white shadow-sm border border-slate-200"
               }`}
             >
               <UploadCloud
                 className={`h-8 w-8 ${
-                  isDragActive ? "text-violet-400" : "text-slate-500"
+                  isDragActive ? "text-violet-500" : "text-slate-400"
                 }`}
                 strokeWidth={1.5}
               />
             </div>
             {isDragActive ? (
-              <p className="text-sm font-semibold text-violet-300">
+              <p className="text-sm font-semibold text-violet-600">
                 Drop to upload…
               </p>
             ) : (
-              <p className="text-sm text-slate-400">
-                <span className="font-semibold text-violet-400">
+              <p className="text-sm text-slate-500">
+                <span className="font-semibold text-violet-600">
                   Click to browse
                 </span>{" "}
                 or drag &amp; drop
               </p>
             )}
-            <p className="text-xs text-slate-600">JPG, PNG, PDF — max 10 MB</p>
+            <p className="text-xs text-slate-400">JPG, PNG, PDF — max 10 MB</p>
           </>
         )}
       </div>
@@ -320,14 +339,10 @@ function UploadColumn({ onExtract, isLoading }: UploadColumnProps) {
         className={[
           "relative flex items-center justify-center gap-2 overflow-hidden rounded-2xl px-5 py-4 text-sm font-bold transition-all duration-200",
           !file || isLoading
-            ? "cursor-not-allowed bg-white/5 text-slate-500 border border-white/10"
-            : "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-900/40 hover:from-violet-500 hover:to-indigo-500 hover:shadow-violet-700/50 active:scale-[0.98]",
+            ? "cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200"
+            : "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-200 hover:from-violet-500 hover:to-indigo-500 hover:shadow-violet-300 active:scale-[0.98]",
         ].join(" ")}
       >
-        {/* Shimmer effect when active */}
-        {file && !isLoading && (
-          <span className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-        )}
         {isLoading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -341,12 +356,12 @@ function UploadColumn({ onExtract, isLoading }: UploadColumnProps) {
         )}
       </button>
 
-      {/* Badge */}
-      <p className="text-center text-xs text-slate-600">
+      {/* Badge without Tesseract */}
+      <p className="text-center text-xs text-slate-400">
         Powered by{" "}
-        <span className="font-semibold text-slate-400">Groq LPU™</span>
+        <span className="font-semibold text-slate-600">Groq Vision LPU™</span>
         {" · "}
-        <span className="font-semibold text-slate-400">Llama 3.2 Vision</span>
+        <span className="font-semibold text-slate-600">Llama 3.2 Vision</span>
       </p>
     </div>
   );
@@ -358,27 +373,29 @@ function UploadColumn({ onExtract, isLoading }: UploadColumnProps) {
 
 function LoadingPanel() {
   return (
-    <div className="flex flex-col items-center justify-center gap-6 rounded-2xl border border-white/10 bg-white/5 px-8 py-20 text-center">
+    <div className="flex flex-col items-center justify-center gap-6 rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 px-8 py-20 text-center shadow-sm">
       <div className="relative flex items-center justify-center">
-        <span className="absolute inline-flex h-20 w-20 animate-ping rounded-full bg-violet-500 opacity-10" />
-        <span className="absolute inline-flex h-14 w-14 animate-ping rounded-full bg-violet-500 opacity-15 [animation-delay:300ms]" />
-        <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 shadow-xl shadow-violet-900/50">
-          <Loader2 className="h-6 w-6 animate-spin text-white" />
+        <span className="absolute inline-flex h-20 w-20 animate-ping rounded-full bg-violet-400 opacity-15" />
+        <span className="relative inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 shadow-xl shadow-violet-200">
+          <Loader2 className="h-7 w-7 animate-spin text-white" />
         </span>
       </div>
+
       <div>
-        <p className="text-sm font-bold text-slate-200">
-          Processing with Groq LPU™
+        <p className="text-base font-bold text-slate-800">
+          Analyzing document via Groq Vision LPU™…
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          Usually under 3 seconds
+          Reading receipt layout, dates, subtotal, and extracting line items…
         </p>
       </div>
+
+      {/* Skeleton rows */}
       <div className="w-full max-w-xs space-y-2.5">
-        {[100, 75, 90, 55].map((w, i) => (
+        {[100, 75, 90, 60].map((w, i) => (
           <div
             key={i}
-            className="h-2.5 animate-pulse rounded-full bg-white/10"
+            className="h-2.5 animate-pulse rounded-full bg-slate-200/80"
             style={{
               width: `${w}%`,
               animationDelay: `${i * 150}ms`,
@@ -403,17 +420,17 @@ interface OutputColumnProps {
 function OutputColumn({ state, result, error }: OutputColumnProps) {
   if (state === "idle") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed border-white/10 bg-white/[0.02] px-8 py-28 text-center">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <PackageOpen className="h-10 w-10 text-slate-600" strokeWidth={1} />
+      <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/80 px-8 py-28 text-center">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <PackageOpen className="h-10 w-10 text-slate-300" strokeWidth={1} />
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-400">
+          <p className="text-sm font-semibold text-slate-500">
             Extracted data will appear here
           </p>
-          <p className="mt-1 max-w-xs text-xs text-slate-600">
-            Upload an invoice and click{" "}
-            <span className="font-medium text-slate-500">
+          <p className="mt-1 max-w-xs text-xs text-slate-400">
+            Upload an invoice or receipt and click{" "}
+            <span className="font-medium text-slate-600">
               &ldquo;Run AI Extraction&rdquo;
             </span>{" "}
             to begin.
@@ -423,49 +440,37 @@ function OutputColumn({ state, result, error }: OutputColumnProps) {
     );
   }
 
-  if (state === "loading") return <LoadingPanel />;
+  if (state === "loading") {
+    return <LoadingPanel />;
+  }
 
   if (state === "error") {
-    const isPlanError =
-      error?.includes("decommissioned") ||
-      error?.includes("vision-capable") ||
-      error?.includes("model_not_found");
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-red-500/20 bg-red-500/5 px-6 py-20 text-center">
-        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
+      <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-red-200 bg-red-50/80 px-6 py-20 text-center">
+        <div className="rounded-2xl border border-red-200 bg-white p-4 shadow-sm">
           <AlertCircle className="h-8 w-8 text-red-400" strokeWidth={1.5} />
         </div>
         <div className="max-w-xs">
-          <p className="text-sm font-bold text-red-300">Extraction failed</p>
-          <p className="mt-2 text-xs text-red-400/80 leading-relaxed">
-            {error}
-          </p>
-          {isPlanError && (
-            <a
-              href="https://console.groq.com/docs/deprecations"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-500/20 transition"
-            >
-              View Groq Model Docs →
-            </a>
-          )}
+          <p className="text-sm font-bold text-red-600">Extraction failed</p>
+          <p className="mt-2 text-xs text-red-500 leading-relaxed break-words">{error}</p>
         </div>
       </div>
     );
   }
 
-
   if (!result) return null;
+
+  const formattedTax = formatCurrency(result.tax);
+  const formattedTotal = formatCurrency(result.totalAmount);
 
   return (
     <div className="flex flex-col gap-5">
       {/* Header + copy */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-lg font-bold text-white">Extraction Result</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Structured data extracted by Groq Vision AI.
+          <h2 className="text-lg font-bold text-slate-800">Extraction Result</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Structured financial data parsed by Groq Vision AI.
           </p>
         </div>
         <CopyButton data={result} />
@@ -474,34 +479,41 @@ function OutputColumn({ state, result, error }: OutputColumnProps) {
       {/* Metrics */}
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <MetricCard icon={Building2} label="Vendor" value={result.vendorName} />
+          <MetricCard
+            icon={Building2}
+            label="Vendor"
+            value={result.vendorName}
+          />
         </div>
         <MetricCard icon={CalendarDays} label="Date" value={result.date} />
-        <MetricCard icon={Receipt} label="Tax" value={result.tax} />
+        <MetricCard icon={Receipt} label="Tax" value={formattedTax} />
         <div className="col-span-2">
           <MetricCard
             icon={DollarSign}
             label="Total Amount"
-            value={result.totalAmount}
+            value={formattedTotal}
             accent
           />
         </div>
       </div>
 
-      {/* Line items */}
-      {result.lineItems?.length > 0 && (
-        <div>
-          <div className="mb-3 flex items-center gap-2">
+      {/* Line items table */}
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
               Line Items
             </h3>
-            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-semibold text-slate-400">
-              {result.lineItems.length}
+            <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+              {result.lineItems?.length || 0}
             </span>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-white/10">
+        </div>
+
+        {result.lineItems && result.lineItems.length > 0 ? (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm bg-white">
             <table className="w-full text-sm">
-              <thead className="border-b border-white/10 bg-white/5">
+              <thead className="border-b border-slate-100 bg-slate-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
                     Description
@@ -511,25 +523,26 @@ function OutputColumn({ state, result, error }: OutputColumnProps) {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5 bg-transparent">
+              <tbody className="divide-y divide-slate-100">
                 {result.lineItems.map((item, idx) => (
-                  <tr
-                    key={idx}
-                    className="transition hover:bg-white/5"
-                  >
-                    <td className="px-4 py-3 text-slate-300">
+                  <tr key={idx} className="transition hover:bg-violet-50/40">
+                    <td className="px-4 py-3 text-slate-700 font-medium">
                       {item.description}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono font-semibold text-slate-100">
-                      {item.amount}
+                    <td className="px-4 py-3 text-right font-mono font-semibold text-slate-900">
+                      {formatCurrency(item.amount)}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-xs text-slate-400">
+            No individual line items detected on this receipt.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -573,56 +586,54 @@ export default function Home() {
   }, []);
 
   return (
-    // Deep dark indigo/slate background with subtle radial glow
-    <div className="relative min-h-screen overflow-hidden bg-[#0a0a14]">
-      {/* Background glow orbs */}
-      <div className="pointer-events-none absolute -top-40 -left-40 h-[600px] w-[600px] rounded-full bg-violet-700/10 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-indigo-700/10 blur-3xl" />
-      <div className="pointer-events-none absolute top-1/2 left-1/2 h-[400px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-900/5 blur-3xl" />
+    // Light gradient background — soft indigo/slate
+    <div className="relative min-h-screen bg-gradient-to-br from-slate-100 via-white to-indigo-50/60 text-slate-900">
+      {/* Subtle background glow blobs */}
+      <div className="pointer-events-none absolute -top-32 -left-32 h-[500px] w-[500px] rounded-full bg-violet-200/20 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -right-32 h-[400px] w-[400px] rounded-full bg-indigo-200/20 blur-3xl" />
 
       {/* ── Navbar ── */}
-      <header className="relative z-30 border-b border-white/10 bg-white/[0.03] backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl shadow-sm">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-6 py-3.5">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 shadow-lg shadow-violet-900/40">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 shadow-md shadow-violet-200">
               <Sparkles className="h-4 w-4 text-white" />
             </div>
-            <span className="text-base font-extrabold tracking-tight text-white">
+            <span className="text-base font-extrabold tracking-tight text-slate-800">
               LedgerAI
             </span>
           </div>
-          <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-0.5 text-xs font-bold text-violet-300">
+          <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-xs font-bold text-violet-600">
             Beta
           </span>
           <div className="ml-auto flex items-center gap-3">
             <div className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
               <span className="text-xs text-slate-500">API Connected</span>
             </div>
-            <span className="rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-bold text-slate-400">
-              Groq LPU™
+            <span className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-600">
+              Groq Vision LPU™
             </span>
           </div>
         </div>
       </header>
 
       {/* ── Hero ── */}
-      <div className="relative border-b border-white/10 bg-white/[0.02]">
+      <div className="border-b border-slate-200/60 bg-white/60 backdrop-blur-sm">
         <div className="mx-auto max-w-7xl px-6 py-10">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Live
             </span>
-            <span className="text-xs text-slate-600">Groq API connected</span>
+            <span className="text-xs text-slate-400">Groq Vision LPU™</span>
           </div>
-          <h1 className="mt-3 bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-4xl font-extrabold tracking-tight text-transparent">
-            Invoice Extraction Dashboard
+          <h1 className="mt-3 bg-gradient-to-r from-slate-800 via-violet-700 to-indigo-600 bg-clip-text text-4xl font-extrabold tracking-tight text-transparent">
+            Invoice &amp; Receipt Extraction Dashboard
           </h1>
           <p className="mt-2 max-w-2xl text-slate-500">
-            Upload any invoice — JPG, PNG, or PDF — and LedgerAI extracts
-            structured financial data in under 3 seconds using Groq&apos;s
-            LPU™ inference.
+            Upload any invoice or receipt — JPG, PNG, or PDF — and LedgerAI uses Groq&apos;s
+            Vision LPU™ inference to accurately extract vendor names, dates, amounts, and line items.
           </p>
         </div>
       </div>
@@ -631,7 +642,7 @@ export default function Home() {
       <main className="relative mx-auto max-w-7xl px-6 py-10">
         <div className="grid gap-8 lg:grid-cols-2">
           {/* Left — Upload */}
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30 backdrop-blur-sm">
+          <div className="rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm backdrop-blur-sm">
             <UploadColumn
               onExtract={handleExtract}
               isLoading={outputState === "loading"}
@@ -639,7 +650,7 @@ export default function Home() {
           </div>
 
           {/* Right — Output */}
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30 backdrop-blur-sm">
+          <div className="rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm backdrop-blur-sm">
             <OutputColumn
               state={outputState}
               result={result}
