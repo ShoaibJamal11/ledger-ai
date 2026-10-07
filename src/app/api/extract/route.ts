@@ -3,6 +3,15 @@ import { NextRequest } from "next/server";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// Vision-capable models to try in order (most preferred first).
+// Groq periodically deprecates preview models — we try each until one works.
+const VISION_MODELS = [
+  "llama-3.2-90b-vision-preview",
+  "llama-3.2-11b-vision-preview",
+  "meta-llama/llama-4-scout-17b-16e-instruct",
+  "llama-4-scout-17b-16e-instruct",
+];
+
 const SYSTEM_PROMPT = `You are an expert accountant and OCR engine. \
 Extract structured financial data from the provided invoice or receipt image. \
 Return STRICTLY valid JSON with the following shape and nothing else:
@@ -17,6 +26,47 @@ Return STRICTLY valid JSON with the following shape and nothing else:
 }
 If a field cannot be determined, use null for its value. Do NOT include markdown fences.`;
 
+async function tryVisionModels(imageUrl: string) {
+  for (const model of VISION_MODELS) {
+    try {
+      const completion = await groq.chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: [
+              { type: "image_url", image_url: { url: imageUrl } },
+              {
+                type: "text",
+                text: "Extract the invoice data from this image and return valid JSON.",
+              },
+            ],
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 1024,
+      });
+      return { model, completion };
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : String(err);
+      // If it's a model-not-found / decommissioned error, try the next model.
+      const isModelError =
+        msg.includes("model_not_found") ||
+        msg.includes("decommissioned") ||
+        msg.includes("does not exist") ||
+        msg.includes("model_decommissioned");
+      if (!isModelError) throw err; // re-throw real errors immediately
+      console.warn(`[/api/extract] Model ${model} unavailable, trying next…`);
+    }
+  }
+  throw new Error(
+    "No vision-capable model is available on your Groq API plan. " +
+      "Please check https://console.groq.com/docs/deprecations or upgrade your plan."
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -24,37 +74,19 @@ export async function POST(req: NextRequest) {
 
     if (!image || !image.startsWith("data:")) {
       return Response.json(
-        { error: "Missing or invalid image field. Expected a base64 data URL." },
+        {
+          error:
+            "Missing or invalid image field. Expected a base64 data URL.",
+        },
         { status: 400 }
       );
     }
 
-    const completion = await groq.chat.completions.create({
-      // llama-3.2-11b-vision-preview is the stable Groq vision model
-      model: "llama-3.2-11b-vision-preview",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: image },
-            },
-            {
-              type: "text",
-              text: "Extract the invoice data from this image and return valid JSON.",
-            },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      max_tokens: 1024,
-    });
+    const { completion } = await tryVisionModels(image);
 
     const raw = completion.choices[0]?.message?.content ?? "{}";
 
-    // Defensive parse — strip any accidental markdown fences
+    // Strip any accidental markdown fences
     const clean = raw
       .replace(/^```(?:json)?/m, "")
       .replace(/```$/m, "")
@@ -69,4 +101,3 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: message }, { status: 500 });
   }
 }
-

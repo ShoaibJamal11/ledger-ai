@@ -426,20 +426,35 @@ function OutputColumn({ state, result, error }: OutputColumnProps) {
   if (state === "loading") return <LoadingPanel />;
 
   if (state === "error") {
+    const isPlanError =
+      error?.includes("decommissioned") ||
+      error?.includes("vision-capable") ||
+      error?.includes("model_not_found");
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-red-500/20 bg-red-500/5 px-8 py-24 text-center">
+      <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-red-500/20 bg-red-500/5 px-6 py-20 text-center">
         <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
           <AlertCircle className="h-8 w-8 text-red-400" strokeWidth={1.5} />
         </div>
-        <div>
+        <div className="max-w-xs">
           <p className="text-sm font-bold text-red-300">Extraction failed</p>
-          <p className="mt-1 max-w-xs text-xs text-red-400/70 break-all">
+          <p className="mt-2 text-xs text-red-400/80 leading-relaxed">
             {error}
           </p>
+          {isPlanError && (
+            <a
+              href="https://console.groq.com/docs/deprecations"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-500/20 transition"
+            >
+              View Groq Model Docs →
+            </a>
+          )}
         </div>
       </div>
     );
   }
+
 
   if (!result) return null;
 
