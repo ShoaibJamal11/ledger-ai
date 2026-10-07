@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
     }
 
     const completion = await groq.chat.completions.create({
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
-      response_format: { type: "json_object" },
+      // llama-3.2-11b-vision-preview is the stable Groq vision model
+      model: "llama-3.2-11b-vision-preview",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -69,3 +69,4 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: message }, { status: 500 });
   }
 }
+
